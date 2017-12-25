@@ -1,0 +1,414 @@
+
+#Script to analyse the frequency data and associate with features for Zanini data. 
+
+* Read the csv files 
+* Perform necessary calcuations
+* Plot results (eventually new script)
+
+Make sure to set your working directory to the correct folder
+Kristof: setwd('/Users/hopla/project-master/project/gitpleuni/bachelerProject/Rscripts')
+PSP Oct 2016: changed setwd command to go to Dropbox shared folder. 
+
+
+```{r}
+#setwd("~/Documents/Git/bachelerProject/Rscripts")
+setwd("~/Dropbox/2016Project_Gabriella _Abdul/Rscripts")
+source('./baseRscript.R')
+library(scales)
+library(plotrix)
+
+#Gabriella: setwd("C:/Users/Gaby/Dropbox/2016Project_Gabriella _Abdul/Rscripts")
+#10/12/16 might need to install package Pegas in order to run other programs in baseRscript.R
+
+```
+
+Read the stored frequencies rather than calculating frequencies again
+```{r}
+read.table("../Output/freqPatTs_Zanini.csv",sep=",",header=TRUE,row.names=1)->freqPatTsZanini
+colMeansTsZanini<-apply(freqPatTsZanini, 2 , mean, na.rm=TRUE)
+
+#GT 10/9/16 : search apply function apply.
+```
+
+## Create overview dataframe and plot site frequency spectra 
+Only synonymous, non-synomous and stop codons are considered
+- for each mutation, determine whether it is synonymous, non-synonymous or creates a stop
+- add information on resistance  positions
+
+```{r}
+#PSP Nov 11 2015 I removed lowerConf and upperConf here because we no longer calculate them
+#x<-data.frame(num=1:984,colMeansTs,TypeOfSite,lowerConf,upperConf)
+#PSP Nov 11 2015 I renamed x OverviewDFZanini and newdata OverviewDFZaniniOrderedByFreq
+
+
+numsitesZanini<-length(colMeansTsZanini)
+OverviewDFZanini<-data.frame(num=1:numsitesZanini,colMeansTsZanini)
+
+OverviewDFZanini$TypeOfSite<-TypeOfSite[1:numsitesZanini]
+OverviewDFZanini$TypeOfSite[1:39]<-"overlap"
+OverviewDFZanini$TypeOfSite[which(consensusB != consensusC | consensusC != consensus01AE)]<-"exclude"
+
+
+OverviewDFZanini$WTnt<-consensusB[1:numsitesZanini]
+
+#Mut rates and sel coefficients
+read.csv("../Data/HIVMutRates/HIVMutRates.csv")->mutrates
+OverviewDFZanini$TSmutrate<-0
+OverviewDFZanini$TSmutrate[OverviewDFZanini$WTnt=="a"]<-mutrates$Probability[mutrates$Nucleotide.substitution=="AG"]
+OverviewDFZanini$TSmutrate[OverviewDFZanini$WTnt=="c"]<-mutrates$Probability[mutrates$Nucleotide.substitution=="CU"]
+OverviewDFZanini$TSmutrate[OverviewDFZanini$WTnt=="g"]<-mutrates$Probability[mutrates$Nucleotide.substitution=="GA"]
+OverviewDFZanini$TSmutrate[OverviewDFZanini$WTnt=="t"]<-mutrates$Probability[mutrates$Nucleotide.substitution=="UC"]
+
+for (i in 1:984){
+OverviewDFZanini$EstSelCoeff[i] = EstimatedS(OverviewDFZanini$TSmutrate[i],OverviewDFZanini$colMeansTsZanini[i])}
+
+#OverviewDFZanini$EstSelCoeff= OverviewDFZanini$TSmutrate/OverviewDFZanini$colMeansTsZanini
+#OverviewDFZanini$EstSelCoeff[OverviewDFZanini$EstSelCoeff>1]<-1
+
+#WT AAs 
+OverviewDFZanini$WTAA<-""
+for (i in 1:numsitesZanini){
+    if (i%%3==1) OverviewDFZanini$WTAA[i] = seqinr::translate(OverviewDFZanini$WTnt[c(i,i+1,i+2)])
+    if (i%%3==2) OverviewDFZanini$WTAA[i] = seqinr::translate(OverviewDFZanini$WTnt[c(i-1,i,i+1)])
+    if (i%%3==0) OverviewDFZanini$WTAA[i] = seqinr::translate(OverviewDFZanini$WTnt[c(i-2,i-1,i)])
+}
+
+OverviewDFZanini$MUTAA<-""
+#MUT AAs
+for (i in 1:numsitesZanini){
+    if (i%%3==1) OverviewDFZanini$MUTAA[i] = seqinr::translate(c(transition(OverviewDFZanini$WTnt[i]),OverviewDFZanini$WTnt[c(i+1,i+2)]))
+    if (i%%3==2) OverviewDFZanini$MUTAA[i] = seqinr::translate(c(OverviewDFZanini$WTnt[c(i-1)],transition(OverviewDFZanini$WTnt[i]),OverviewDFZanini$WTnt[c(i+1)]))
+    if (i%%3==0) OverviewDFZanini$MUTAA[i] = seqinr::translate(c(OverviewDFZanini$WTnt[c(i-2,i-1)],transition(OverviewDFZanini$WTnt[i])))
+}
+
+write.csv(OverviewDFZanini,"../Output/OverviewSelCoeffZanini.csv")
+
+#remove sites that are different between A and B subtypes / ALL B subtype, except pat 6 is subtype C. 
+OverviewDFZanini<-OverviewDFZanini[which(consensusC==consensusB),]
+
+#colors
+OverviewDFZaniniOrderedByFreq <- OverviewDFZanini[order(OverviewDFZanini$colMeansTsZanini),] 
+OverviewDFZaniniOrderedByFreq <- OverviewDFZaniniOrderedByFreq[!is.na(OverviewDFZaniniOrderedByFreq$colMeansTsZanini),] 
+OverviewDFZaniniOrderedByFreq$color<-""
+OverviewDFZaniniOrderedByFreq$NTcolor<-""
+for (i in 1:length(OverviewDFZaniniOrderedByFreq$color)){
+    if (OverviewDFZaniniOrderedByFreq$TypeOfSite[i]=="syn") OverviewDFZaniniOrderedByFreq$color[i] = "darkolivegreen3"
+    if (OverviewDFZaniniOrderedByFreq$TypeOfSite[i]=="nonsyn") OverviewDFZaniniOrderedByFreq$color[i] = "red"
+    if (OverviewDFZaniniOrderedByFreq$TypeOfSite[i]=="stop") OverviewDFZaniniOrderedByFreq$color[i] = "black"
+    if (OverviewDFZaniniOrderedByFreq$TypeOfSite[i]=="res") OverviewDFZaniniOrderedByFreq$color[i] = "purple"
+    if (OverviewDFZaniniOrderedByFreq$WTnt[i] == "a") OverviewDFZaniniOrderedByFreq$NTcolor[i] = "blue"
+    if (OverviewDFZaniniOrderedByFreq$WTnt[i] == "c") OverviewDFZaniniOrderedByFreq$NTcolor[i] = "purple"
+    if (OverviewDFZaniniOrderedByFreq$WTnt[i] == "g") OverviewDFZaniniOrderedByFreq$NTcolor[i] = "purple"
+    if (OverviewDFZaniniOrderedByFreq$WTnt[i] == "t") OverviewDFZaniniOrderedByFreq$NTcolor[i] = "blue"
+}
+```
+
+
+RT: Make the plots (transitions) for rankng
+```{r}
+#Project recreate this figure for zannini
+#GT 11/7/16 added RTdata != overlap and exclude. changed pch= 16 to "|". I added legend to make the text box.
+# 11/11 I think we need to change the "axis" labels to be similar to the paper's axis
+#11/14 added log= "y" removed log from plot RTdata, added axis for 10^-3, removed 0.001 from RTdata change the ylim to (10^-5, 0.6)
+#I tried paste("10^-3", sep="") it's the closest in giving me the the exponent label.
+
+#function scientific()?
+
+
+
+par(mfrow=c(1,1))
+#pdf("../Output/RTRanking.pdf",width = 13, height = 10)
+
+pdf(file="Rplot.pdf", width = 13, height = 10)
+vector0.2<- array(0.2,6)
+for(i in 2:6){
+  vector0.2[i]= 0.1 + vector0.2[i-1]
+}
+
+vector0.02<-array(0.02, 8)
+for(i in 2:8){
+  vector0.02[i]= 0.01 +vector0.02[i-1]
+}
+
+vector0.002<-array(0.002, 8)
+for(i in 2:8){
+  vector0.002[i]= 0.001 +vector0.002[i-1]
+}
+
+vector0.0002<-array(0.0002, 8)
+for(i in 2:8){
+  vector0.0002[i]= 0.0001 +vector0.0002[i-1]
+}
+
+vector0.00002<-array(0.00002, 8)
+for(i in 2:8){
+  vector0.00002[i]= 0.00001 +vector0.00002[i-1]
+}
+
+mainvec <- c(vector0.00002, vector0.0002, vector0.002, vector0.02, vector0.2)
+mainvec2 <- c(mainvec,10^(-5:-1))
+
+RTdata<-OverviewDFZaniniOrderedByFreq
+RTdata<-RTdata[RTdata$TypeOfSite!="res",]
+RTdata<-RTdata[RTdata$TypeOfSite!="overlap",]
+RTdata<-RTdata[RTdata$TypeOfSite!="exclude",]
+plot(RTdata$colMeansTsZanini, panel.first= c(abline(h=mainvec2, lty=4, col="lightgrey")),
+     main = "RT mutant frequencies",
+     #ylim=c(log(0.0001),log(1)),
+     ylim=c(10^-5, 0.6),
+     cex=1.5, pch = "|", col=alpha(RTdata$color, .7),
+     xlab = "Nucleotides ordered by mean mutation frequency",
+     ylab = "Mean mutation frequency" , yaxt = "n", log="y")
+
+axis(2, at=c(10^-5, 10^-4, 10^-3, 10^-2, 10^-1), labels = expression(10^-5, 10^-4, 10^-3, 10^-2, 10^-1),las= 1)
+
+axis(2, at=mainvec, labels=NA,las= 1) # this makes the 8 ticks w/out the labels
+
+legend("bottomright", c("Synonymous", "Non-synonymous", "Nonsense"), pch= "|", col = c("darkolivegreen3", "red", "black"))
+
+dev.off()
+
+
+#Use Expression function to make superscript
+#grid(nx=NA, ny=NULL, col="lightgray", lwd=1, lty=6)
+
+#dev.off()
+#axis(2,labels = c(0,0.001, 0.005, 0.05, 0.1), at = log(c(0.001, 0.002, 0.006, 0.051, 0.101)),las=1)
+
+#grid lines
+#abline(v=)
+#grid()
+
+```
+
+
+```{r}
+#Color by NT 
+plot(log(RTdata$colMeansTsZanini+0.0001), main = "RT mutant frequencies",
+     ylim=c(log(0.0001),log(1)),xlim=c(0,500),cex=1.5, pch = 16, col=alpha(RTdata$NTcolor, .7), xlab = "Nucleotides ordered by mean mutation frequency", ylab = "Mean mutation frequency" , yaxt = "n")
+axis(2,labels = c(0.0001, 0.001, 0.005, 0.05, 0.1,1.0), at = log(c(0.0001, 0.0011, 0.0051, 0.0501, 0.1001,1.0001)),las=1)
+```
+```
+
+
+Show distribution of fitness effects estimated
+```{r}
+#GT: 10/25/16 I added col= "yellow" on abline(v=median(log10(SelcoeffA))) &(v=median(log10(SelcoeffC))) , so I can see the median line better
+#This is for nonsysn log of 10 values
+
+par(mfrow=c(2,2))
+SelcoeffA<-OverviewDFZanini$EstSelCoeff[OverviewDFZanini$TypeOfSite=="nonsyn"&OverviewDFZanini$WTnt=="a"]
+SelcoeffA<-SelcoeffA[!is.na(SelcoeffA)]
+hist(log10(SelcoeffA),breaks= 20, xlim=c(-5,-0),ylim=c(0,30),col="red",main="A",xlab="sel coeff (10log)",ylab="count")
+abline(v=median(log10(SelcoeffA)), col= "yellow") # it's about -1.365
+
+SelcoeffC<-OverviewDFZanini$EstSelCoeff[OverviewDFZanini$TypeOfSite=="nonsyn"&OverviewDFZanini$WTnt=="c"]
+SelcoeffC<-SelcoeffC[!is.na(SelcoeffC)]
+hist(log10(SelcoeffC),breaks= 20, xlim=c(-5,-0),ylim=c(0,20),col="red",main="C",xlab="sel coeff (10log)",ylab="count")
+abline(v=median(log10(SelcoeffC)), col= "yellow")
+
+SelcoeffG<-OverviewDFZanini$EstSelCoeff[OverviewDFZanini$TypeOfSite=="nonsyn"&OverviewDFZanini$WTnt=="g"]
+SelcoeffG<-SelcoeffG[!is.na(SelcoeffG)]
+hist(log10(SelcoeffG),breaks= 20, xlim=c(-5,-0),ylim=c(0,20),col="red",main="G",xlab="sel coeff (10log)",ylab="count")
+abline(v=median(log10(SelcoeffG)))
+
+SelcoeffT<-OverviewDFZanini$EstSelCoeff[OverviewDFZanini$TypeOfSite=="nonsyn"&OverviewDFZanini$WTnt=="t"]
+SelcoeffT<-SelcoeffT[!is.na(SelcoeffT)]
+hist(log10(SelcoeffT),breaks= 20, xlim=c(-5,-0),ylim=c(0,20),col="red",main="T",xlab="sel coeff (10log)",ylab="count")
+abline(v=median(log10(SelcoeffT)))
+```
+
+```{r}
+#GT 10/25/16 I added col= "yellow" to abline(v=median(SelcoeffA)), so I can see the line better. I think might the figure for nonsynonmous on page 19.
+
+hist(SelcoeffA,breaks= seq(0,1,by=0.01), xlim=c(0,1),ylim=c(0,50),main="A",xlab="sel coeff",ylab="count",col="red")
+abline(v=median(SelcoeffA), col= "yellow")
+
+hist(SelcoeffC,breaks= seq(0,1,by=0.01), xlim=c(0,1),ylim=c(0,10),main="C",xlab="sel coeff",ylab="count",col="green")
+abline(v=median(SelcoeffC))
+
+hist(SelcoeffG,breaks= seq(0,1,by=0.01), xlim=c(0,1),ylim=c(0,20),main="G",xlab="sel coeff",ylab="count",col="purple")
+abline(v=median(SelcoeffG))
+
+
+hist(SelcoeffT,breaks= seq(0,1,by=0.01), xlim=c(0,1),ylim=c(0,20),main="T",xlab="sel coeff",ylab="count",col="blue")
+abline(v=median(SelcoeffT))
+```
+
+
+
+### Make an AA variability map 
+```{r}
+translatedB<-seqinr::translate(consensusB)
+#convert the fasta files into AA sequences
+translatedfasta<-c()
+for (i in 1:length(listfastafiles)){ #for each fastafile 
+         filename=paste("../Data/BachelerFiles/FASTAfiles/",substr(listfastafiles[i],1,6),".fasta",sep="")
+	       patfasta<-read.dna(filename, format = "fasta",as.character=TRUE) #read the file       
+	       translatedfasta<-rbind(translatedfasta,t(apply(patfasta,1,function(x) seqinr::translate(x))))
+}
+```
+
+```{r}
+#determine for each codon position, the frequency of mutations compared to subtype B
+mutations<-c()
+for(m in 1:length(translatedB)){
+prevmut<-100-(length(which(translatedfasta[,m]==translatedB[m]))/nrow(translatedfasta)*100)
+mutations<-c(mutations,prevmut)
+}
+
+# Plot for protease including resistance positions
+plot(mutations[1:99],type='o',ylab='Mutation frequency (%)',xlab='AA position')
+# Plot for RT including resistance positions
+plot(mutations[ 100:328],type='o',ylab='Mutation frequency (%)',xlab='AA position',xaxt='n')
+axis(1,(100:328)-99,label=(100:328)-99)
+
+
+# Plot for RT excluding resistance positions and including resisatnce positions in red
+mutationposition<-cbind(1:229,mutations[100:328])
+plot(mutationposition[-c(sort(RTImuts$pos)),1],mutationposition[-c(sort(RTImuts$pos)),2],type='o',ylab='Mutation frequency (%)',xlab='AA position',xaxt='n')
+points(mutationposition[c(sort(RTImuts$pos)),1],mutationposition[c(sort(RTImuts$pos)),2],col='red')
+axis(1,(100:328)-99,label=(100:328)-99)
+```
+
+
+
+## Non-Syn plot 
+
+```{r}
+#GT 10/25/16 Error object 'PROdata' not found and more errors In addition: Warning message:
+#In is.na(x) : is.na() applied to non-(list or vector) of type 'NULL'. 
+#11/3/16 Not needed for this project Zannini.
+
+pdf("../Output/PR-nonsyn.pdf",width = 13, height = 10)
+PROdataNonSyn<-PROdata[PROdata$TypeOfSite=="nonsyn",]
+#Make plot of Protease 
+plot(PROdataNonSyn$num[order(PROdataNonSyn$num)],PROdataNonSyn$colMeansTs66[order(PROdataNonSyn$num)]+0.001,col=PROdataNonSyn$color[order(PROdataNonSyn$num)],pch=16,log="y",type="b", xlab = "Position in protease gene", ylab = "frequency non-synonymous transitions")#,ylim=c(0,max(PROdataNonSyn$colMeansTs66)))
+#Add moving mean
+for (i in 20:280){
+    range = (i-20):(i+20)
+#    points(i, mean(PROdataNonSyn$colMeansTs66[PROdataNonSyn$num%in%range]), col="blue",pch = 12, cex=3)
+    points(i, median(PROdataNonSyn$colMeansTs66[PROdataNonSyn$num%in%range]), col="green",pch = 11, cex=2)
+}
+dev.off()
+
+RTdataNonSyn<-RTdata[RTdata$TypeOfSite=="nonsyn",]
+plot(RTdataNonSyn$num[order(RTdataNonSyn$num)],RTdataNonSyn$colMeansTs66[order(RTdataNonSyn$num)]+0.001,col=RTdataNonSyn$color[order(RTdataNonSyn$num)],pch=16,log="y",type="b")
+
+#Add moving mean
+for (i in 370:900){
+    range = (i-20):(i+20)
+   # points(i, mean(RTdataNonSyn$colMeansTs66[RTdataNonSyn$num%in%range]), col="blue",pch = 12, cex=3)
+    points(i, median(RTdataNonSyn$colMeansTs66[RTdataNonSyn$num%in%range]), col="green",pch = 11, cex=3)
+}
+
+i=370
+    range = (i-20):(i+20)
+```
+
+
+## Syn plot 
+
+```{r}
+pdf("../Output/PR-syn.pdf",width = 13, height = 10)
+PROdataSyn<-PROdata[PROdata$TypeOfSite=="syn",]
+#Make plot of Protease 
+plot(PROdataSyn$num[order(PROdataSyn$num)],PROdataSyn$colMeansTs66[order(PROdataSyn$num)]+0.001,col=PROdataSyn$color[order(PROdataSyn$num)],pch=16,
+     log="y",
+     type="b")#,ylim=c(0,max(PROdataNonSyn$colMeansTs66)))
+
+#Add moving mean
+for (i in 20:280){
+    range = (i-10):(i+10)
+    points(i, median(PROdataSyn$colMeansTs66[PROdataSyn$num%in%range]), col="blue",pch = 11, cex=2)
+}
+dev.off()
+```
+
+```{r}
+#GT: 10/26/16 Error in xy.coords(x,y, xlabel, log): 'x' and 'y' length differ, looked up what order function does
+
+RTdataNonSyn<-RTdata[RTdata$TypeOfSite=="nonsyn",]
+plot(RTdataNonSyn$num[order(RTdataNonSyn$num)],RTdataNonSyn$colMeansTs66[order(RTdataNonSyn$num)]+0.001,col=RTdataNonSyn$color[order(RTdataNonSyn$num)],pch=16,log="y",type="b")
+
+#Add moving mean
+for (i in 370:900){
+    range = (i-20):(i+20)
+   # points(i, mean(RTdataNonSyn$colMeansTs66[RTdataNonSyn$num%in%range]), col="blue",pch = 12, cex=3)
+    points(i, median(RTdataNonSyn$colMeansTs66[RTdataNonSyn$num%in%range]), col="green",pch = 11, cex=3)
+}
+
+i=370
+    range = (i-20):(i+20)
+```
+
+```{r}
+#GT 10/26/16 still receiving error messages about xy.coord(x,y): different length In is.na(x) : is.na() applied to non-(list or vector) of type 'NULL'
+
+pdf("../Output/RT-syn.pdf",width = 13, height = 10)
+RTdataSyn<-RTdata[RTdata$TypeOfSite=="syn",]
+#Make plot of RTtease 
+plot(RTdataSyn$num[order(RTdataSyn$num)],RTdataSyn$colMeansTs66[order(RTdataSyn$num)]+0.001,col=RTdataSyn$color[order(RTdataSyn$num)],pch=16,
+     log="y",
+     type="b", 
+    ylim = c(0.001,0.06)    )#,ylim=c(0,max(RTdataNonSyn$colMeansTs66)))
+#Add moving mean
+for (i in 370:900){
+    range = (i-10):(i+10)
+    points(i, median(RTdataSyn$colMeansTs66[RTdataSyn$num%in%range])+0.001, col="blue",pch = 11, cex=2)
+}
+dev.off()
+```
+
+```{r}
+AlldataSyn<-rbind(PROdata[PROdata$TypeOfSite=="syn",],RTdata[RTdata$TypeOfSite=="syn",])
+plot(AlldataSyn$num[order(AlldataSyn$num)],AlldataSyn$colMeansTs66[order(AlldataSyn$num)]+0.001,col=AlldataSyn$color[order(AlldataSyn$num)],pch=16,
+     log="y",
+     type="b", 
+    ylim = c(0.001,0.06)    )#,ylim=c(0,max(RTdataNonSyn$colMeansTs66)))
+#Add line for AA 82-107 from Mayrose paper
+lines(c(82*3,107*3),c(0.002,0.002),col=2,lwd=2)
+lines(c(7*3,31*3),c(0.002,0.002),col=2,lwd=2)
+
+
+```
+
+## RT
+RTdataNonSyn<-RTdata[RTdata$TypeOfSite=="nonsyn",]
+plot(RTdataNonSyn$num[order(RTdataNonSyn$num)],RTdataNonSyn$colMeansTs66[order(RTdataNonSyn$num)]+0.001,col=RTdataNonSyn$color[order(RTdataNonSyn$num)],pch=16,log="y",type="b")
+
+#Add moving mean
+for (i in 370:900){
+    range = (i-20):(i+20)
+    points(i, mean(RTdataNonSyn$colMeansTs66[RTdataNonSyn$num%in%range]), col="blue",pch = 12, cex=3)
+    points(i, median(RTdataNonSyn$colMeansTs66[RTdataNonSyn$num%in%range]), col="green",pch = 11, cex=3)
+}
+
+i=370
+    range = (i-20):(i+20)
+    
+```    
+
+
+
+# Next steps 
+Going to randomisations
+- frequency-ordered figure: does the coloring scheme hold?
+  
+- position-ordered figure: does the pattern hold?  
+    
+###For protease, which are the most deleterious non-syn sites? 
+To be done 
+Interesting? why? for therapy or vaccine. 
+
+###For protease, which are the most neutral non-syn sites? 
+corresponding to the expected frequency based on sequence length * mutation rate? Frequency should flucatuate aroudn the expected value? 
+
+#For protease, which are the most deleterious syn sites? 
+To be done : green colored sites with low frequ
+Interesting why?  HIV replication?
+
+
+
+
+
